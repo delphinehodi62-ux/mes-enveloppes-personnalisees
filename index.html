@@ -15,7 +15,7 @@
 (()=>{'use strict';
 const KEY='mes-enveloppes-budget-double-v3',OLD='mes-enveloppes-budget-personnalise-v2';
 const starter=['Courses','Tabac','Essence','Animaux','Hygiène & Entretien','Imprévus','Loisirs & Sorties','Enfants','Pharmacie','Shopping','Coiffeur & Beauté','Divers'];
-const monthlyNames=new Set(['Tabac','Essence','Imprévus','Loisirs & Sorties','Enfants','Pharmacie','Shopping','Coiffeur & Beauté','Divers']);
+const monthlyNames=new Set(['Essence','Imprévus','Enfants','Pharmacie','Shopping','Coiffeur & Beauté']);
 const uid=()=>String(Date.now())+'-'+Math.random().toString(36).slice(2,10);
 const money=n=>new Intl.NumberFormat('fr-FR',{style:'currency',currency:'EUR'}).format((Number(n)||0)/100);
 const cents=v=>{const n=Number(String(v).replace(',','.'));return Number.isFinite(n)?Math.round(n*100):NaN};
@@ -42,6 +42,28 @@ function migrate(old){if(!old||!Array.isArray(old.periods)||!old.periods.length)
 let db;let storageOK=true;
 try{const existing=localStorage.getItem(KEY);if(existing){db=JSON.parse(existing);if(!db?.monthly||!Array.isArray(db.periods))throw Error('Données invalides')}
  else{const legacy=localStorage.getItem(OLD);db=legacy?migrate(JSON.parse(legacy)):fresh()}}catch(err){db=fresh();setTimeout(()=>alert('Impossible de lire les données existantes. Ne restaure pas de sauvegarde avant de vérifier tes fichiers JSON. '+err.message),150)}
+// Ajustement du classement initial, exécuté une seule fois pour les données v3 existantes.
+function correctCategories(){
+ if(db.categoryFix20261018)return;
+ const names=new Set(['Tabac','Loisirs & Sorties','Divers']);
+ const moved=db.monthly.envelopes.filter(e=>names.has(e.name));
+ if(moved.length){
+  const ids=new Set(moved.map(e=>e.id));
+  const periods=db.periods.slice().sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  for(const e of moved){for(const p of db.periods){if(!p.envelopes.some(x=>x.id===e.id))p.envelopes.push({...e});}}
+  const kept=[];
+  for(const o of db.monthly.ops){
+   if(!ids.has(o.env)){kept.push(o);continue;}
+   let dest=periods[0];
+   for(const p of periods){if(String(p.date||'')<=String(o.date||''))dest=p;}
+   dest.ops.push(o);
+  }
+  db.monthly.ops=kept;
+  db.monthly.envelopes=db.monthly.envelopes.filter(e=>!ids.has(e.id));
+ }
+ db.categoryFix20261018=true;
+}
+correctCategories();
 let tab='periodic';
 function toast(msg){el('notice').textContent=msg;el('notice').style.display='block';clearTimeout(toast.timer);toast.timer=setTimeout(()=>el('notice').style.display='none',3500)}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch{storageOK=false;toast('Stockage indisponible : exporte une sauvegarde !')}}
